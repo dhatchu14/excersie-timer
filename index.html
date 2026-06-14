@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Exercise Timer</title>
+<style>
+  :root {
+    --bg: #0f1623;
+    --panel: #1a2536;
+    --panel-2: #223149;
+    --text: #e8eef7;
+    --muted: #8aa0bd;
+    --blue: #3b82f6;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --green: #22c55e;
+    --ring-track: #2a3a52;
+    --shadow: 0 10px 30px rgba(0,0,0,0.4);
+    --radius: 16px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100%;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    gap: 18px;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .header h1 {
+    font-size: 1.15rem;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  .sound-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .sound-toggle input { width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer; }
+
+  /* Phase progress: 12 blocks */
+  .phase-bar {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+  }
+  .phase-block {
+    height: 10px;
+    border-radius: 4px;
+    background: var(--panel-2);
+    transition: background 0.3s, box-shadow 0.3s, transform 0.1s;
+    cursor: pointer;
+  }
+  .phase-block:active { transform: scale(0.9); }
+  .phase-block.done { background: var(--green); }
+  .phase-block.active {
+    background: var(--blue);
+    box-shadow: 0 0 8px rgba(59,130,246,0.7);
+  }
+
+  /* Main card */
+  .card {
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .step-word {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    min-height: 1.2em;
+    transition: color 0.3s;
+    text-align: center;
+    line-height: 1.1;
+  }
+
+  /* Ring */
+  .ring-wrap {
+    position: relative;
+    width: 240px;
+    height: 240px;
+  }
+  .ring-wrap svg { transform: rotate(-90deg); display: block; }
+  .ring-track { stroke: var(--ring-track); }
+  .ring-progress {
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.95s linear, stroke 0.4s;
+  }
+  .ring-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .ring-seconds { font-size: 3.6rem; font-weight: 800; line-height: 1; }
+  .ring-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+
+  /* Step dots */
+  .step-dots { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; min-height: 16px; }
+  .step-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--panel-2);
+    transition: all 0.25s;
+  }
+  .step-dot.done { background: var(--green); }
+  .step-dot.active {
+    background: var(--blue);
+    transform: scale(1.6);
+    box-shadow: 0 0 10px rgba(59,130,246,0.8);
+  }
+
+  /* Rep dots */
+  .rep-dots {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .rep-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--panel-2);
+    transition: all 0.25s;
+  }
+  .rep-dot.done { background: var(--green); }
+  .rep-dot.active { background: var(--blue); box-shadow: 0 0 8px rgba(59,130,246,0.7); }
+
+  /* Stats */
+  .stats {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 14px 10px;
+    box-shadow: var(--shadow);
+  }
+  .stat { text-align: center; }
+  .stat .num { font-size: 1.4rem; font-weight: 800; }
+  .stat .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  /* Buttons */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+  button.ctrl {
+    border: none;
+    border-radius: 12px;
+    padding: 16px 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--panel-2);
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s, opacity 0.2s;
+    touch-action: manipulation;
+  }
+  button.ctrl:active { transform: scale(0.96); }
+  button.ctrl.primary { background: var(--blue); grid-column: 1 / 2; }
+  button.ctrl.primary.running { background: var(--orange); }
+  button.ctrl:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Completion screen */
+  .complete {
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 40px 24px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .complete .emoji { font-size: 4rem; }
+  .complete h2 { margin: 0; font-size: 1.8rem; }
+  .complete p { margin: 0; color: var(--muted); }
+  .complete button {
+    border: none;
+    border-radius: 12px;
+    padding: 16px 32px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--green);
+    cursor: pointer;
+  }
+
+  .resume-bar {
+    background: var(--panel-2);
+    border: 1px solid var(--blue);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow);
+  }
+  .resume-bar #resumeText { font-size: 0.95rem; font-weight: 600; }
+  .resume-actions { display: flex; gap: 10px; }
+  .resume-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 10px;
+    padding: 10px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--text);
+  }
+  #resumeBtn { background: var(--green); color: #08200f; }
+  #resumeDismiss { background: var(--panel); color: var(--muted); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <h1>Exercise Timer</h1>
+    <label class="sound-toggle">
+      <input type="checkbox" id="soundToggle" checked>
+      <span>Sound &amp; Voice</span>
+    </label>
+  </div>
+
+  <!-- Resume prompt (shown on load if a saved session exists) -->
+  <div id="resumeBar" class="resume-bar hidden">
+    <span id="resumeText">Resume your previous session?</span>
+    <div class="resume-actions">
+      <button id="resumeBtn">Resume</button>
+      <button id="resumeDismiss">Start over</button>
+    </div>
+  </div>
+
+  <!-- Phase progress (12 blocks) -->
+  <div class="phase-bar" id="phaseBar"></div>
+
+  <!-- Main timer view -->
+  <div id="timerView">
+    <div class="card">
+      <div class="step-word" id="stepWord">Ready</div>
+
+      <div class="ring-wrap">
+        <svg width="240" height="240" viewBox="0 0 240 240">
+          <circle class="ring-track" cx="120" cy="120" r="108" fill="none" stroke-width="16"/>
+          <circle class="ring-progress" id="ringProgress" cx="120" cy="120" r="108" fill="none" stroke-width="16"/>
+        </svg>
+        <div class="ring-center">
+          <div class="ring-seconds" id="ringSeconds">10</div>
+          <div class="ring-label" id="ringLabel">seconds</div>
+        </div>
+      </div>
+
+      <div class="step-dots" id="stepDots"></div>
+      <div class="rep-dots" id="repDots"></div>
+    </div>
+
+    <div class="stats" style="margin-top:18px;">
+      <div class="stat"><div class="num"><span id="statPhase">1</span>/12</div><div class="lbl">Phase</div></div>
+      <div class="stat"><div class="num" id="statMidNum"><span id="statStep">1</span>/<span id="stepTotal">4</span></div><div class="lbl" id="lblMid">Step</div></div>
+      <div class="stat"><div class="num" id="statRightNum"><span id="statRep">1</span>/<span id="repTotal">10</span></div><div class="lbl" id="lblRight">Rep</div></div>
+    </div>
+
+    <div class="controls" style="margin-top:18px;">
+      <button class="ctrl primary" id="startBtn">Start</button>
+      <button class="ctrl" id="backBtn">Back</button>
+      <button class="ctrl" id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <!-- Completion screen -->
+  <div id="completeView" class="complete hidden">
+    <div class="emoji">🎉</div>
+    <h2>Well Done!</h2>
+    <p>All 12 phases complete.</p>
+    <button id="restartBtn">Restart</button>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ====================================================================
+  // CONFIG — edit this to match your coach's routine.
+  // Each phase has a "type":
+  //   "reps"   -> REPS reps, each with `steps` holds of HOLD seconds
+  //               (voice counts "One, Two, ..." each step)
+  //   "timed"  -> a single countdown of `duration` seconds (e.g. 5 min);
+  //               name announced at the start, chime at the end
+  //   "counts" -> a list of `segments`, each announced by name and held
+  //               for SEG_SECONDS (or its own `duration`)
+  // ====================================================================
+  var REPS = 10;          // reps per "reps" phase
+  var HOLD = 10;          // seconds per step hold
+  var REST = 5;           // seconds of rest between phases (0 = none)
+  var SEG_SECONDS = 15;   // default seconds per counted movement
+  var PHASE_GAP = 1000;   // ms pause AFTER the phase name before counting starts
+
+  var PHASE_CONFIG = [
+    { name: "Phase 1",  type: "reps",  steps: 4 },
+    { name: "Phase 2",  type: "reps",  steps: 4 },
+    { name: "Phase 3",  type: "reps",  steps: 2 },
+    { name: "Phase 4",  type: "reps",  steps: 1 },
+    { name: "Phase 5",  type: "reps",  steps: 1 },
+    { name: "Phase 6",  type: "reps",  steps: 2 },
+    { name: "Phase 7",  type: "reps",  steps: 2 },
+    { name: "Hand Rotation", type: "timed", duration: 300 },        // 5 minutes
+    { name: "Hip Rotation",  type: "counts", segments: [
+        { label: "Clockwise" },
+        { label: "Anticlockwise" }
+      ] },
+    { name: "Phase 10", type: "reps", steps: 8 },
+    { name: "Phase 11", type: "timed", duration: 300 },             // 5 minutes
+    { name: "Toe Movements", type: "counts", segments: [
+        { label: "Right leg, up and down" },
+        { label: "Left leg, up and down" },
+        { label: "Right leg, clockwise" },
+        { label: "Right leg, anticlockwise" },
+        { label: "Left leg, clockwise" },
+        { label: "Left leg, anticlockwise" }
+      ] }
+  ];
+
+  var PHASES = PHASE_CONFIG.length;
+  var STEP_WORDS = ["One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight"];
+
+  // ---------- Per-phase helpers ----------
+  function P() { return PHASE_CONFIG[phase]; }
+  function phaseType(p) { return PHASE_CONFIG[p].type; }
+  function stepsIn(p) { return PHASE_CONFIG[p].steps || 1; }
+  function segCount(p) { return (PHASE_CONFIG[p].segments || []).length; }
+  function segDuration(p, i) {
+    var seg = PHASE_CONFIG[p].segments[i];
+    return (seg && seg.duration) ? seg.duration : SEG_SECONDS;
+  }
+  // Total seconds of the currently-active unit (step / segment / whole timed phase).
+  function unitTotal() {
+    var p = P();
+    if (p.type === "reps")   return HOLD;
+    if (p.type === "timed")  return p.duration;
+    if (p.type === "counts") return segDuration(phase, segIdx);
+    return HOLD;
+  }
+
+  // ---------- State ----------
+  var phase = 0;        // 0-indexed phase
+  var rep = 0;          // reps phase: current rep
+  var step = 0;         // reps phase: current step
+  var segIdx = 0;       // counts phase: current segment
+  var secondsLeft = HOLD;
+  var resting = false;
+  var restLeft = REST;
+  var running = false;
+  var finished = false;
+  var tickTimer = null;
+  var leadInTimer = null;   // pending "phase name -> 1s gap -> count" timer
+  var soundOn = true;
+  var startedOnce = false;
+  var justAnnounced = false;
+
+  // ---------- DOM ----------
+  var phaseBar = document.getElementById("phaseBar");
+  var stepDotsEl = document.getElementById("stepDots");
+  var repDotsEl = document.getElementById("repDots");
+  var stepWord = document.getElementById("stepWord");
+  var ringSeconds = document.getElementById("ringSeconds");
+  var ringLabel = document.getElementById("ringLabel");
+  var ringProgress = document.getElementById("ringProgress");
+  var statPhase = document.getElementById("statPhase");
+  var statStep = document.getElementById("statStep");
+  var stepTotal = document.getElementById("stepTotal");
+  var statRep = document.getElementById("statRep");
+  var repTotal = document.getElementById("repTotal");
+  var lblMid = document.getElementById("lblMid");
+  var lblRight = document.getElementById("lblRight");
+  var startBtn = document.getElementById("startBtn");
+  var backBtn = document.getElementById("backBtn");
+  var resetBtn = document.getElementById("resetBtn");
+  var restartBtn = document.getElementById("restartBtn");
+  var soundToggle = document.getElementById("soundToggle");
+  var timerView = document.getElementById("timerView");
+  var completeView = document.getElementById("completeView");
+  var resumeBar = document.getElementById("resumeBar");
+  var resumeText = document.getElementById("resumeText");
+  var resumeBtn = document.getElementById("resumeBtn");
+  var resumeDismiss = document.getElementById("resumeDismiss");
+
+  // Ring geometry
+  var R = 108;
+  var CIRC = 2 * Math.PI * R;
+  ringProgress.style.strokeDasharray = CIRC;
+
+  // ---------- Build static elements ----------
+  (function buildStatics() {
+    for (var i = 0; i < PHASES; i++) {
+      var b = document.createElement("div");
+      b.className = "phase-block";
+      phaseBar.appendChild(b);
+    }
+    for (var r = 0; r < REPS; r++) {
+      var rd = document.createElement("div");
+      rd.className = "rep-dot";
+      repDotsEl.appendChild(rd);
+    }
+  })();
+  var phaseBlocks = phaseBar.children;
+  var repDots = repDotsEl.children;
+
+  // Step dots are rebuilt when the count changes (steps or segments per phase).
+  var builtStepCount = -1;
+  function ensureStepDots(n) {
+    if (builtStepCount === n) return;
+    stepDotsEl.innerHTML = "";
+    for (var s = 0; s < n; s++) {
+      var d = document.createElement("div");
+      d.className = "step-dot";
+      stepDotsEl.appendChild(d);
+    }
+    builtStepCount = n;
+  }
+
+  // ---------- Audio (Web Audio API) ----------
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AC();
+      } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+
+  function tone(freq, startOffset, duration) {
+    if (!audioCtx) return;
+    var t0 = audioCtx.currentTime + startOffset;
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.02);
+  }
+
+  function playMelody(freqs, noteLen) {
+    if (!soundOn) return;
+    ensureAudio();
+    if (!audioCtx) return;
+    for (var i = 0; i < freqs.length; i++) tone(freqs[i], i * noteLen, noteLen * 0.9);
+  }
+
+  function beepStepEnd()  { playMelody([660], 0.15); }
+  function chimeRepEnd()  { playMelody([523, 659, 784], 0.16); }
+  function melodyPhaseEnd(){ playMelody([523, 587, 659, 784, 880], 0.16); }
+  function melodyAllDone() { playMelody([523, 587, 659, 698, 784, 880, 1047], 0.18); }
+
+  // ---------- Background music (Web Audio API) ----------
+  var music = (function () {
+    var MUSIC_VOL = 0.06;
+    var DUCK_VOL  = 0.012;
+    var NOTE_GAP  = 1.7;
+    var SCALE = [196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+    var PATTERN = [2, 4, 5, 3, 6, 4, 2, 5, 3, 1, 4, 2];
+
+    var playing = false, schedTimer = null, nextTime = 0, idx = 0;
+    var master = null, ducked = false;
+
+    function ensureMaster() {
+      if (!master && audioCtx) {
+        master = audioCtx.createGain();
+        master.gain.value = MUSIC_VOL;
+        master.connect(audioCtx.destination);
+      }
+    }
+    function playNote(freq, t) {
+      [[freq, 1.0], [freq * 2, 0.4]].forEach(function (pair) {
+        var osc = audioCtx.createOscillator();
+        var g = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = pair[0];
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(pair[1], t + 0.5);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(t);
+        osc.stop(t + 2.6);
+      });
+    }
+    function scheduler() {
+      if (!audioCtx) return;
+      while (nextTime < audioCtx.currentTime + 1.0) {
+        playNote(SCALE[PATTERN[idx % PATTERN.length]], nextTime);
+        idx++;
+        nextTime += NOTE_GAP;
+      }
+    }
+    return {
+      start: function () {
+        if (playing) return;
+        ensureAudio();
+        if (!audioCtx) return;
+        ensureMaster();
+        playing = true;
+        master.gain.cancelScheduledValues(audioCtx.currentTime);
+        master.gain.value = ducked ? DUCK_VOL : MUSIC_VOL;
+        nextTime = audioCtx.currentTime + 0.15;
+        scheduler();
+        schedTimer = setInterval(scheduler, 250);
+      },
+      stop: function () {
+        playing = false;
+        if (schedTimer) { clearInterval(schedTimer); schedTimer = null; }
+      },
+      duck: function (on) {
+        ducked = on;
+        if (!master || !audioCtx) return;
+        var now = audioCtx.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(master.gain.value, now);
+        master.gain.linearRampToValueAtTime(on ? DUCK_VOL : MUSIC_VOL, now + 0.18);
+      }
+    };
+  })();
+
+  // ---------- Voice (Web Speech API) ----------
+  var selectedVoice = null;
+  function pickVoice() {
+    if (!("speechSynthesis" in window)) return;
+    var voices = window.speechSynthesis.getVoices();
+    if (!voices || !voices.length) return;
+    var prefer = [
+      "google uk english female", "google us english", "microsoft zira",
+      "microsoft aria", "samantha", "karen", "moira", "tessa", "fiona",
+      "victoria", "susan", "serena", "female"
+    ];
+    var found = null;
+    for (var i = 0; i < prefer.length && !found; i++) {
+      for (var j = 0; j < voices.length; j++) {
+        if (voices[j].name.toLowerCase().indexOf(prefer[i]) !== -1) { found = voices[j]; break; }
+      }
+    }
+    if (!found) {
+      for (var k = 0; k < voices.length; k++) {
+        if (voices[k].lang && voices[k].lang.toLowerCase().indexOf("en") === 0) { found = voices[k]; break; }
+      }
+    }
+    if (found) selectedVoice = found;
+  }
+  if ("speechSynthesis" in window) {
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+
+  function speak(text) {
+    if (!soundOn) return;
+    if (!("speechSynthesis" in window)) return;
+    try {
+      var u = new SpeechSynthesisUtterance(text);
+      if (selectedVoice) { u.voice = selectedVoice; u.lang = selectedVoice.lang; }
+      u.rate = 1.0;
+      u.pitch = 1.1;
+      u.volume = 1.0;
+      u.onstart = function () { music.duck(true); };
+      u.onend   = function () { music.duck(false); };
+      u.onerror = function () { music.duck(false); };
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  function stopSpeech() {
+    if ("speechSynthesis" in window) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+    music.duck(false);
+  }
+
+  // Speak text and call cb() once it finishes (so we can time a gap after it).
+  // Falls back to a timer if speech is off or onend never fires.
+  function speakThen(text, cb) {
+    if (!soundOn || !("speechSynthesis" in window)) { if (cb) cb(); return; }
+    try {
+      var u = new SpeechSynthesisUtterance(text);
+      if (selectedVoice) { u.voice = selectedVoice; u.lang = selectedVoice.lang; }
+      u.rate = 1.0; u.pitch = 1.1; u.volume = 1.0;
+      var done = false;
+      function fin() { if (done) return; done = true; music.duck(false); if (cb) cb(); }
+      u.onstart = function () { music.duck(true); };
+      u.onend = fin;
+      u.onerror = fin;
+      window.speechSynthesis.speak(u);
+      setTimeout(fin, 2500); // safety net in case onend doesn't fire
+    } catch (e) { if (cb) cb(); }
+  }
+
+  function clearLeadIn() { if (leadInTimer) { clearTimeout(leadInTimer); leadInTimer = null; } }
+
+  // ---------- Rendering ----------
+  function getCSS(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+  // Color by fraction remaining: works for any unit length (10s or 5min).
+  function ringColorFrac(frac) {
+    if (frac > 0.6) return getCSS("--blue");
+    if (frac > 0.3) return getCSS("--orange");
+    return getCSS("--red");
+  }
+  function fmtTime(sec) {
+    if (sec >= 60) {
+      var m = Math.floor(sec / 60), s = sec % 60;
+      return m + ":" + (s < 10 ? "0" : "") + s;
+    }
+    return "" + sec;
+  }
+
+  function renderRing() {
+    var total = resting ? REST : unitTotal();
+    var val = resting ? restLeft : secondsLeft;
+    ringSeconds.textContent = fmtTime(val);
+    var frac = total > 0 ? val / total : 0;
+    ringProgress.style.strokeDashoffset = CIRC * (1 - frac);
+    var color = (finished || resting) ? getCSS("--green") : ringColorFrac(frac);
+    ringProgress.style.stroke = color;
+    ringSeconds.style.color = color;
+    stepWord.style.color = color;
+    // Ring label
+    if (resting) ringLabel.textContent = "rest";
+    else if (!finished && P().type === "timed") ringLabel.textContent = "remaining";
+    else ringLabel.textContent = "seconds";
+  }
+
+  function renderAll() {
+    var nextPhase = Math.min(phase + 1, PHASES - 1);
+    var shownPhase = resting ? nextPhase : phase;
+    var p = PHASE_CONFIG[shownPhase];
+
+    // Big word
+    if (finished) stepWord.textContent = "Done";
+    else if (resting) stepWord.textContent = "Rest";
+    else if (p.type === "reps") stepWord.textContent = STEP_WORDS[step];
+    else if (p.type === "timed") stepWord.textContent = p.name;
+    else if (p.type === "counts") stepWord.textContent = p.segments[segIdx].label;
+
+    // Phase blocks
+    for (var i = 0; i < PHASES; i++) {
+      var pc = "phase-block";
+      if (i < phase || (resting && i === phase)) pc += " done";
+      else if (!finished && ((!resting && i === phase) || (resting && i === nextPhase))) pc += " active";
+      phaseBlocks[i].className = pc;
+    }
+
+    // Sub-progress dots
+    var showStepDots = !finished && !resting && (p.type === "reps" || p.type === "counts");
+    var showRepDots  = !finished && !resting && p.type === "reps";
+    stepDotsEl.style.display = showStepDots ? "flex" : "none";
+    repDotsEl.style.display  = showRepDots ? "flex" : "none";
+
+    if (showStepDots) {
+      var n = (p.type === "reps") ? stepsIn(shownPhase) : segCount(shownPhase);
+      var cur = (p.type === "reps") ? step : segIdx;
+      ensureStepDots(n);
+      var sd = stepDotsEl.children;
+      for (var s = 0; s < n; s++) {
+        sd[s].className = "step-dot" + (s < cur ? " done" : (s === cur ? " active" : ""));
+      }
+    }
+    if (showRepDots) {
+      for (var rr = 0; rr < REPS; rr++) {
+        repDots[rr].className = "rep-dot" + (rr < rep ? " done" : (rr === rep ? " active" : ""));
+      }
+    }
+
+    // Stats
+    statPhase.textContent = Math.min(shownPhase + 1, PHASES);
+    if (p.type === "reps" && !resting && !finished) {
+      lblMid.textContent = "Step"; statStep.textContent = step + 1; stepTotal.textContent = stepsIn(shownPhase);
+      lblRight.textContent = "Rep"; statRep.textContent = rep + 1; repTotal.textContent = REPS;
+    } else if (p.type === "counts" && !resting && !finished) {
+      lblMid.textContent = "Move"; statStep.textContent = segIdx + 1; stepTotal.textContent = segCount(shownPhase);
+      lblRight.textContent = "Rep"; statRep.textContent = "—"; repTotal.textContent = "—";
+    } else {
+      // timed phases, rest, finished — the ring shows the live countdown
+      lblMid.textContent = "Step"; statStep.textContent = "—"; stepTotal.textContent = "—";
+      lblRight.textContent = "Rep"; statRep.textContent = "—"; repTotal.textContent = "—";
+    }
+
+    renderRing();
+  }
+
+  // ---------- Voice announcements ----------
+  function announcePhase() { speak(P().name); }
+  function announceUnit() {
+    if (resting) return;
+    var p = P();
+    if (p.type === "reps") speak(STEP_WORDS[step]);
+    else if (p.type === "counts") speak(p.segments[segIdx].label);
+    // timed: nothing more after the phase name
+  }
+
+  // ---------- Flow ----------
+  // Set up the active unit's countdown and render. Speaks the unit if asked.
+  function enterUnit(announce) {
+    secondsLeft = unitTotal();
+    renderAll();
+    saveState();
+    if (announce) announceUnit();
+  }
+
+  // Enter a (fresh) phase: reset sub-position, announce name, then (after a
+  // 1-second gap) begin counting the first unit.
+  function enterPhase() {
+    rep = 0; step = 0; segIdx = 0;
+    secondsLeft = unitTotal();
+    renderAll();
+    saveState();
+    clearLeadIn();
+    if (running) {
+      stopTicking();              // hold the ring still during name + gap
+      announcePhaseThenCount();
+    } else {
+      announcePhase();            // paused: just say the name; count begins on Start
+    }
+  }
+
+  // Speak the phase name, wait PHASE_GAP, then announce + start the count.
+  function announcePhaseThenCount() {
+    speakThen(P().name, function () {
+      clearLeadIn();
+      leadInTimer = setTimeout(function () {
+        leadInTimer = null;
+        if (!running) return;
+        announceUnit();
+        startTicking();
+      }, PHASE_GAP);
+    });
+  }
+
+  // Current unit finished -> move forward within the phase, or end it.
+  function advance() {
+    var p = P();
+    if (p.type === "reps") {
+      beepStepEnd();
+      if (step < stepsIn(phase) - 1) { step++; enterUnit(true); return; }
+      if (rep < REPS - 1) { chimeRepEnd(); rep++; step = 0; enterUnit(true); return; }
+      endPhase();
+    } else if (p.type === "counts") {
+      beepStepEnd();
+      if (segIdx < segCount(phase) - 1) { segIdx++; enterUnit(true); return; }
+      endPhase();
+    } else { // timed
+      endPhase();
+    }
+  }
+
+  function endPhase() {
+    if (phase < PHASES - 1) {
+      melodyPhaseEnd();
+      if (REST > 0) startRest();
+      else beginNextPhase();
+    } else {
+      finish();
+    }
+  }
+
+  function startRest() {
+    resting = true;
+    restLeft = REST;
+    renderAll();
+    saveState();
+    speak("Rest. Next, " + PHASE_CONFIG[phase + 1].name);
+  }
+
+  function beginNextPhase() {
+    resting = false;
+    phase++;
+    enterPhase();
+  }
+
+  // Single-step reps phases count the hold aloud ("1, 2, ... 10") instead of
+  // staying silent — there's no step number to call out in those.
+  function isCountdownStep() {
+    return !resting && !finished && P().type === "reps" && stepsIn(phase) === 1;
+  }
+
+  function tick() {
+    if (!running) return;
+    if (resting) {
+      restLeft--;
+      renderRing();
+      if (restLeft <= 0) { beepStepEnd(); beginNextPhase(); }
+      else saveState();
+      return;
+    }
+    secondsLeft--;
+    if (secondsLeft <= 0) { renderRing(); advance(); }
+    else {
+      renderRing();
+      saveState();
+      if (isCountdownStep()) speak("" + (HOLD - secondsLeft + 1));
+    }
+  }
+
+  function startTicking() { stopTicking(); tickTimer = setInterval(tick, 1000); }
+  function stopTicking() { if (tickTimer) { clearInterval(tickTimer); tickTimer = null; } }
+
+  // ---------- Screen Wake Lock ----------
+  var wakeLock = null;
+  function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      navigator.wakeLock.request("screen").then(function (wl) {
+        wakeLock = wl;
+        wakeLock.addEventListener("release", function () { wakeLock = null; });
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && running) requestWakeLock();
+  });
+
+  // ---------- Auto-save / resume ----------
+  var SAVE_KEY = "exerciseTimerState_v2";
+  function saveState() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        phase: phase, rep: rep, step: step, segIdx: segIdx,
+        secondsLeft: secondsLeft, resting: resting, restLeft: restLeft,
+        startedOnce: startedOnce, finished: finished
+      }));
+    } catch (e) {}
+  }
+  function clearState() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+  function loadState() {
+    try { var raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }
+    catch (e) { return null; }
+  }
+  function applyResume(s) {
+    phase = Math.min(Math.max(s.phase | 0, 0), PHASES - 1);
+    rep = Math.min(Math.max(s.rep | 0, 0), REPS - 1);
+    step = Math.min(Math.max(s.step | 0, 0), stepsIn(phase) - 1);
+    segIdx = Math.min(Math.max(s.segIdx | 0, 0), Math.max(segCount(phase) - 1, 0));
+    resting = !!s.resting;
+    restLeft = (typeof s.restLeft === "number") ? s.restLeft : REST;
+    var total = unitTotal();
+    secondsLeft = (typeof s.secondsLeft === "number") ? Math.min(s.secondsLeft, total) : total;
+    startedOnce = true;
+    finished = false;
+    running = false;
+    justAnnounced = resting; // don't blurt a count if we resume mid-rest
+    updateStartBtn();
+    renderAll();
+  }
+
+  // ---------- Controls ----------
+  function start() {
+    if (finished) return;
+    ensureAudio();
+    running = true;
+    updateStartBtn();
+    requestWakeLock();
+    if (soundOn) music.start();
+    clearLeadIn();
+
+    var atPhaseStart = !resting &&
+      rep === 0 && step === 0 && segIdx === 0 && secondsLeft === unitTotal();
+    if (atPhaseStart) {
+      // Start of a phase -> announce name, 1s gap, then begin the count.
+      stopTicking();
+      announcePhaseThenCount();
+    } else if (resting) {
+      startTicking();
+    } else {
+      // resume mid-unit
+      if (!justAnnounced) announceUnit();
+      startTicking();
+    }
+    startedOnce = true;
+    justAnnounced = true;
+  }
+
+  function pause() {
+    running = false;
+    updateStartBtn();
+    stopTicking();
+    clearLeadIn();
+    stopSpeech();
+    music.stop();
+    releaseWakeLock();
+    saveState();
+  }
+
+  function toggleStart() { if (running) pause(); else start(); }
+
+  function updateStartBtn() {
+    if (running) { startBtn.textContent = "Pause"; startBtn.classList.add("running"); }
+    else { startBtn.textContent = (startedOnce ? "Resume" : "Start"); startBtn.classList.remove("running"); }
+  }
+
+  // Move to the last unit of the previous phase (for Back at a phase boundary).
+  function goPrevPhaseLastUnit() {
+    if (phase > 0) {
+      phase--;
+      rep = 0; step = 0; segIdx = 0;
+      var t = phaseType(phase);
+      if (t === "reps") { rep = REPS - 1; step = stepsIn(phase) - 1; }
+      else if (t === "counts") { segIdx = segCount(phase) - 1; }
+    }
+  }
+
+  // Back = previous unit (step / segment), or previous phase's last unit.
+  function back() {
+    clearLeadIn();
+    if (finished) {
+      finished = false;
+      completeView.classList.add("hidden");
+      timerView.classList.remove("hidden");
+    }
+    if (resting) {
+      resting = false;
+      secondsLeft = unitTotal();
+      renderAll();
+      saveState();
+      if (running) startTicking();
+      return;
+    }
+    var t = P().type;
+    if (t === "reps") {
+      if (step > 0) step--;
+      else if (rep > 0) { rep--; step = stepsIn(phase) - 1; }
+      else goPrevPhaseLastUnit();
+    } else if (t === "counts") {
+      if (segIdx > 0) segIdx--;
+      else goPrevPhaseLastUnit();
+    } else { // timed
+      goPrevPhaseLastUnit();
+    }
+    secondsLeft = unitTotal();
+    renderAll();
+    saveState();
+    if (running) {
+      stopSpeech();
+      announceUnit();
+      startTicking();
+    }
+  }
+
+  function reset() {
+    pause();
+    phase = 0; rep = 0; step = 0; segIdx = 0;
+    secondsLeft = unitTotal();
+    resting = false; restLeft = REST;
+    finished = false;
+    startedOnce = false;
+    justAnnounced = false;
+    completeView.classList.add("hidden");
+    timerView.classList.remove("hidden");
+    resumeBar.classList.add("hidden");
+    clearState();
+    updateStartBtn();
+    renderAll();
+  }
+
+  function finish() {
+    running = false;
+    finished = true;
+    stopTicking();
+    music.stop();
+    releaseWakeLock();
+    clearState();
+    updateStartBtn();
+    renderAll();
+    melodyAllDone();
+    speak("Well done! All phases complete.");
+    timerView.classList.add("hidden");
+    completeView.classList.remove("hidden");
+  }
+
+  // Tap a phase block to jump to the start of that phase.
+  function jumpToPhase(p) {
+    if (p < 0 || p >= PHASES) return;
+    if (finished) {
+      finished = false;
+      completeView.classList.add("hidden");
+      timerView.classList.remove("hidden");
+    }
+    clearLeadIn();
+    stopSpeech();
+    stopTicking();
+    resting = false;
+    phase = p;
+    startedOnce = true;
+    enterPhase();   // handles announce -> 1s gap -> count (when running)
+  }
+
+  // ---------- Events ----------
+  startBtn.addEventListener("click", toggleStart);
+  backBtn.addEventListener("click", back);
+  resetBtn.addEventListener("click", reset);
+  restartBtn.addEventListener("click", reset);
+
+  for (var pb = 0; pb < phaseBlocks.length; pb++) {
+    (function (idx) {
+      phaseBlocks[idx].addEventListener("click", function () { jumpToPhase(idx); });
+    })(pb);
+  }
+
+  soundToggle.addEventListener("change", function () {
+    soundOn = soundToggle.checked;
+    if (soundOn) { ensureAudio(); if (running) music.start(); }
+    else { stopSpeech(); music.stop(); }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space") { e.preventDefault(); toggleStart(); }
+    else if (e.code === "ArrowLeft") { back(); }
+  });
+
+  resumeBtn.addEventListener("click", function () {
+    if (pendingResume) applyResume(pendingResume);
+    pendingResume = null;
+    resumeBar.classList.add("hidden");
+  });
+  resumeDismiss.addEventListener("click", function () {
+    pendingResume = null;
+    clearState();
+    resumeBar.classList.add("hidden");
+  });
+
+  // ---------- Init ----------
+  soundOn = soundToggle.checked;
+  secondsLeft = unitTotal();
+  renderAll();
+
+  var pendingResume = null;
+  (function checkResume() {
+    var s = loadState();
+    if (s && !s.finished && s.startedOnce &&
+        (s.phase > 0 || s.rep > 0 || s.step > 0 || s.segIdx > 0 || s.resting)) {
+      pendingResume = s;
+      resumeText.textContent =
+        "Resume your session? (Phase " + (Math.min(s.phase, PHASES - 1) + 1) + ")";
+      resumeBar.classList.remove("hidden");
+    } else if (s) {
+      clearState();
+    }
+  })();
+})();
+</script>
+</body>
+</html>
