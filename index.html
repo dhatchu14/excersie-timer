@@ -79,18 +79,34 @@
     gap: 4px;
   }
   .phase-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+  }
+  .phase-block .pnum {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--muted);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+  .phase-block .pbar {
+    width: 100%;
     height: 10px;
     border-radius: 4px;
     background: var(--panel-2);
     transition: background 0.3s, box-shadow 0.3s, transform 0.1s;
-    cursor: pointer;
   }
-  .phase-block:active { transform: scale(0.9); }
-  .phase-block.done { background: var(--green); }
-  .phase-block.active {
+  .phase-block:active .pbar { transform: scale(0.9); }
+  .phase-block.done .pbar { background: var(--green); }
+  .phase-block.active .pbar {
     background: var(--blue);
     box-shadow: 0 0 8px rgba(59,130,246,0.7);
   }
+  .phase-block.done .pnum { color: var(--green); }
+  .phase-block.active .pnum { color: var(--blue); }
 
   /* Main card */
   .card {
@@ -307,7 +323,7 @@
     </div>
 
     <div class="stats" style="margin-top:18px;">
-      <div class="stat"><div class="num"><span id="statPhase">1</span>/12</div><div class="lbl">Phase</div></div>
+      <div class="stat"><div class="num"><span id="statPhase">1</span>/<span id="phaseTotal">12</span></div><div class="lbl">Phase</div></div>
       <div class="stat"><div class="num" id="statMidNum"><span id="statStep">1</span>/<span id="stepTotal">4</span></div><div class="lbl" id="lblMid">Step</div></div>
       <div class="stat"><div class="num" id="statRightNum"><span id="statRep">1</span>/<span id="repTotal">10</span></div><div class="lbl" id="lblRight">Rep</div></div>
     </div>
@@ -323,7 +339,7 @@
   <div id="completeView" class="complete hidden">
     <div class="emoji">🎉</div>
     <h2>Well Done!</h2>
-    <p>All 12 phases complete.</p>
+    <p id="completeText">All phases complete.</p>
     <button id="restartBtn">Restart</button>
   </div>
 
@@ -344,34 +360,29 @@
   //               for SEG_SECONDS (or its own `duration`)
   // ====================================================================
   var REPS = 10;          // reps per "reps" phase
-  var HOLD = 10;          // seconds per step hold
+  var HOLD = 8;           // seconds per step hold
   var REST = 5;           // seconds of rest between phases (0 = none)
   var SEG_SECONDS = 15;   // default seconds per counted movement
-  var PHASE_GAP = 1000;   // ms pause AFTER the phase name before counting starts
+  var PHASE_GAP = 0;      // ms pause AFTER the phase name before counting starts
+
+  // Build N counted segments ("One".."Ten"), each held `dur` seconds.
+  function countTo(n, dur) {
+    var words = ["One", "Two", "Three", "Four", "Five",
+                 "Six", "Seven", "Eight", "Nine", "Ten"];
+    var segs = [];
+    for (var i = 0; i < n; i++) segs.push({ label: words[i], duration: dur });
+    return segs;
+  }
 
   var PHASE_CONFIG = [
     { name: "Phase 1",  type: "reps",  steps: 4 },
     { name: "Phase 2",  type: "reps",  steps: 4 },
-    { name: "Phase 3",  type: "reps",  steps: 2 },
-    { name: "Phase 4",  type: "reps",  steps: 1 },
-    { name: "Phase 5",  type: "reps",  steps: 1 },
-    { name: "Phase 6",  type: "reps",  steps: 2 },
-    { name: "Phase 7",  type: "reps",  steps: 2 },
-    { name: "Hand Rotation", type: "timed", duration: 300 },        // 5 minutes
-    { name: "Hip Rotation",  type: "counts", segments: [
-        { label: "Clockwise" },
-        { label: "Anticlockwise" }
-      ] },
-    { name: "Phase 10", type: "reps", steps: 8 },
-    { name: "Phase 11", type: "timed", duration: 300 },             // 5 minutes
-    { name: "Toe Movements", type: "counts", segments: [
-        { label: "Right leg, up and down" },
-        { label: "Left leg, up and down" },
-        { label: "Right leg, clockwise" },
-        { label: "Right leg, anticlockwise" },
-        { label: "Left leg, clockwise" },
-        { label: "Left leg, anticlockwise" }
-      ] }
+    { name: "Phase 3",  type: "counts", segments: countTo(10, 8) },
+    { name: "Phase 4",  type: "counts", segments: countTo(10, 8), gap: 1 },
+    { name: "Phase 5",  type: "counts", segments: countTo(10, 8) },
+    { name: "Phase 6",  type: "counts", segments: countTo(10, 8) },
+    { name: "Phase 7",  type: "counts", segments: countTo(10, 8), pauseAfter: true },
+    { name: "Phase 8",  type: "reps", steps: 8 }
   ];
 
   var PHASES = PHASE_CONFIG.length;
@@ -382,9 +393,27 @@
   function phaseType(p) { return PHASE_CONFIG[p].type; }
   function stepsIn(p) { return PHASE_CONFIG[p].steps || 1; }
   function segCount(p) { return (PHASE_CONFIG[p].segments || []).length; }
+  // Optional pause (ms) AFTER a unit is announced, before its countdown starts.
+  function phaseGapMs() { var g = P().gap; return (typeof g === "number") ? g * 1000 : 0; }
   function segDuration(p, i) {
     var seg = PHASE_CONFIG[p].segments[i];
     return (seg && seg.duration) ? seg.duration : SEG_SECONDS;
+  }
+  // The last step of a multi-step reps phase is an instant release cue
+  // (announced by its number, but with no hold — e.g. 1, 2, 3, 4 and rolls straight on).
+  function isReleaseStep(p, s) {
+    return PHASE_CONFIG[p].type === "reps" && stepsIn(p) > 1 && s === stepsIn(p) - 1;
+  }
+  // The word spoken/shown for a reps step ("One".."Eight"). The release step keeps
+  // its real number (e.g. "Four"); it's just instant rather than held.
+  function stepWordFor(p, s) {
+    return STEP_WORDS[s];
+  }
+  // Last held step of a phase (skips the instant release step for multi-step reps).
+  function lastRealStep(p) {
+    var s = stepsIn(p) - 1;
+    if (isReleaseStep(p, s) && s > 0) s--;
+    return s;
   }
   // Total seconds of the currently-active unit (step / segment / whole timed phase).
   function unitTotal() {
@@ -445,9 +474,21 @@
 
   // ---------- Build static elements ----------
   (function buildStatics() {
+    phaseBar.style.gridTemplateColumns = "repeat(" + PHASES + ", 1fr)";
+    var phaseTotalEl = document.getElementById("phaseTotal");
+    if (phaseTotalEl) phaseTotalEl.textContent = PHASES;
+    var completeTextEl = document.getElementById("completeText");
+    if (completeTextEl) completeTextEl.textContent = "All " + PHASES + " phases complete.";
     for (var i = 0; i < PHASES; i++) {
       var b = document.createElement("div");
       b.className = "phase-block";
+      var num = document.createElement("span");
+      num.className = "pnum";
+      num.textContent = (i + 1);
+      var bar = document.createElement("span");
+      bar.className = "pbar";
+      b.appendChild(num);
+      b.appendChild(bar);
       phaseBar.appendChild(b);
     }
     for (var r = 0; r < REPS; r++) {
@@ -694,7 +735,7 @@
     // Big word
     if (finished) stepWord.textContent = "Done";
     else if (resting) stepWord.textContent = "Rest";
-    else if (p.type === "reps") stepWord.textContent = STEP_WORDS[step];
+    else if (p.type === "reps") stepWord.textContent = stepWordFor(shownPhase, step);
     else if (p.type === "timed") stepWord.textContent = p.name;
     else if (p.type === "counts") stepWord.textContent = p.segments[segIdx].label;
 
@@ -749,7 +790,7 @@
   function announceUnit() {
     if (resting) return;
     var p = P();
-    if (p.type === "reps") speak(STEP_WORDS[step]);
+    if (p.type === "reps") speak(stepWordFor(phase, step));
     else if (p.type === "counts") speak(p.segments[segIdx].label);
     // timed: nothing more after the phase name
   }
@@ -774,9 +815,8 @@
     if (running) {
       stopTicking();              // hold the ring still during name + gap
       announcePhaseThenCount();
-    } else {
-      announcePhase();            // paused: just say the name; count begins on Start
     }
+    // paused: stay silent; the name is announced when counting starts (on Start)
   }
 
   // Speak the phase name, wait PHASE_GAP, then announce + start the count.
@@ -787,7 +827,7 @@
         leadInTimer = null;
         if (!running) return;
         announceUnit();
-        startTicking();
+        beginCountAfterGap();
       }, PHASE_GAP);
     });
   }
@@ -797,12 +837,24 @@
     var p = P();
     if (p.type === "reps") {
       beepStepEnd();
-      if (step < stepsIn(phase) - 1) { step++; enterUnit(true); return; }
+      if (step < stepsIn(phase) - 1) {
+        step++;
+        if (isReleaseStep(phase, step)) {
+          // Final count is an instant release cue — say its number, no hold, roll straight on.
+          renderAll();
+          announceUnit();
+          if (rep < REPS - 1) { chimeRepEnd(); rep++; step = 0; enterUnit(true); }
+          else endPhase();
+          return;
+        }
+        enterUnit(true);
+        return;
+      }
       if (rep < REPS - 1) { chimeRepEnd(); rep++; step = 0; enterUnit(true); return; }
       endPhase();
     } else if (p.type === "counts") {
       beepStepEnd();
-      if (segIdx < segCount(phase) - 1) { segIdx++; enterUnit(true); return; }
+      if (segIdx < segCount(phase) - 1) { segIdx++; enterUnit(true); beginCountAfterGap(); return; }
       endPhase();
     } else { // timed
       endPhase();
@@ -812,11 +864,31 @@
   function endPhase() {
     if (phase < PHASES - 1) {
       melodyPhaseEnd();
+      if (P().pauseAfter) { pauseIntoNextPhase(); return; }
       if (REST > 0) startRest();
       else beginNextPhase();
     } else {
       finish();
     }
+  }
+
+  // Advance to the next phase but stay paused — the user presses Start to continue.
+  function pauseIntoNextPhase() {
+    resting = false;
+    phase++;
+    rep = 0; step = 0; segIdx = 0;
+    secondsLeft = unitTotal();
+    running = false;
+    stopTicking();
+    clearLeadIn();
+    music.stop();
+    releaseWakeLock();
+    startedOnce = true;
+    justAnnounced = false;
+    updateStartBtn();
+    renderAll();
+    saveState();
+    speak("Paused.");
   }
 
   function startRest() {
@@ -859,6 +931,22 @@
 
   function startTicking() { stopTicking(); tickTimer = setInterval(tick, 1000); }
   function stopTicking() { if (tickTimer) { clearInterval(tickTimer); tickTimer = null; } }
+
+  // Begin the active unit's countdown, honoring an optional per-phase lead-in gap
+  // (the unit's name has just been announced; hold the ring still during the gap).
+  function beginCountAfterGap() {
+    clearLeadIn();
+    var gap = phaseGapMs();
+    if (gap > 0) {
+      stopTicking();
+      leadInTimer = setTimeout(function () {
+        leadInTimer = null;
+        if (running) startTicking();
+      }, gap);
+    } else {
+      startTicking();
+    }
+  }
 
   // ---------- Screen Wake Lock ----------
   var wakeLock = null;
@@ -962,7 +1050,7 @@
       phase--;
       rep = 0; step = 0; segIdx = 0;
       var t = phaseType(phase);
-      if (t === "reps") { rep = REPS - 1; step = stepsIn(phase) - 1; }
+      if (t === "reps") { rep = REPS - 1; step = lastRealStep(phase); }
       else if (t === "counts") { segIdx = segCount(phase) - 1; }
     }
   }
@@ -986,7 +1074,7 @@
     var t = P().type;
     if (t === "reps") {
       if (step > 0) step--;
-      else if (rep > 0) { rep--; step = stepsIn(phase) - 1; }
+      else if (rep > 0) { rep--; step = lastRealStep(phase); }
       else goPrevPhaseLastUnit();
     } else if (t === "counts") {
       if (segIdx > 0) segIdx--;
@@ -1000,7 +1088,7 @@
     if (running) {
       stopSpeech();
       announceUnit();
-      startTicking();
+      beginCountAfterGap();
     }
   }
 
