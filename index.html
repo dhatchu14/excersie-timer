@@ -360,7 +360,8 @@
   //               for SEG_SECONDS (or its own `duration`)
   // ====================================================================
   var REPS = 10;          // reps per "reps" phase
-  var HOLD = 8;           // seconds per step hold
+  var HOLD = 5;           // seconds per step hold
+  var LAST_STEP_HOLD = 2; // seconds for the final step of a multi-step reps phase (e.g. step 4)
   var REST = 5;           // seconds of rest between phases (0 = none)
   var SEG_SECONDS = 15;   // default seconds per counted movement
   var PHASE_GAP = 0;      // ms pause AFTER the phase name before counting starts
@@ -377,11 +378,11 @@
   var PHASE_CONFIG = [
     { name: "Phase 1",  type: "reps",  steps: 4 },
     { name: "Phase 2",  type: "reps",  steps: 4 },
-    { name: "Phase 3",  type: "counts", segments: countTo(10, 8) },
-    { name: "Phase 4",  type: "counts", segments: countTo(10, 8), gap: 1 },
-    { name: "Phase 5",  type: "counts", segments: countTo(10, 8) },
-    { name: "Phase 6",  type: "counts", segments: countTo(10, 8) },
-    { name: "Phase 7",  type: "counts", segments: countTo(10, 8), pauseAfter: true },
+    { name: "Phase 3",  type: "counts", segments: countTo(10, 5) },
+    { name: "Phase 4",  type: "counts", segments: countTo(10, 5), gap: 1 },
+    { name: "Phase 5",  type: "counts", segments: countTo(10, 5) },
+    { name: "Phase 6",  type: "counts", segments: countTo(10, 5) },
+    { name: "Phase 7",  type: "counts", segments: countTo(10, 5) },
     { name: "Phase 8",  type: "reps", steps: 8 }
   ];
 
@@ -399,26 +400,23 @@
     var seg = PHASE_CONFIG[p].segments[i];
     return (seg && seg.duration) ? seg.duration : SEG_SECONDS;
   }
-  // The last step of a multi-step reps phase is an instant release cue
-  // (announced by its number, but with no hold — e.g. 1, 2, 3, 4 and rolls straight on).
-  function isReleaseStep(p, s) {
+  // The last step of a multi-step reps phase is held for LAST_STEP_HOLD seconds
+  // (e.g. 1, 2, 3 held 5s each, then 4 held 3s), before rolling to the next rep.
+  function isLastStep(p, s) {
     return PHASE_CONFIG[p].type === "reps" && stepsIn(p) > 1 && s === stepsIn(p) - 1;
   }
-  // The word spoken/shown for a reps step ("One".."Eight"). The release step keeps
-  // its real number (e.g. "Four"); it's just instant rather than held.
+  // The word spoken/shown for a reps step ("One".."Eight").
   function stepWordFor(p, s) {
     return STEP_WORDS[s];
   }
-  // Last held step of a phase (skips the instant release step for multi-step reps).
+  // Last step of a phase.
   function lastRealStep(p) {
-    var s = stepsIn(p) - 1;
-    if (isReleaseStep(p, s) && s > 0) s--;
-    return s;
+    return stepsIn(p) - 1;
   }
   // Total seconds of the currently-active unit (step / segment / whole timed phase).
   function unitTotal() {
     var p = P();
-    if (p.type === "reps")   return HOLD;
+    if (p.type === "reps")   return isLastStep(phase, step) ? LAST_STEP_HOLD : HOLD;
     if (p.type === "timed")  return p.duration;
     if (p.type === "counts") return segDuration(phase, segIdx);
     return HOLD;
@@ -839,14 +837,6 @@
       beepStepEnd();
       if (step < stepsIn(phase) - 1) {
         step++;
-        if (isReleaseStep(phase, step)) {
-          // Final count is an instant release cue — say its number, no hold, roll straight on.
-          renderAll();
-          announceUnit();
-          if (rep < REPS - 1) { chimeRepEnd(); rep++; step = 0; enterUnit(true); }
-          else endPhase();
-          return;
-        }
         enterUnit(true);
         return;
       }
