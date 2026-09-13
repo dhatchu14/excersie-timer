@@ -251,6 +251,37 @@
     cursor: pointer;
   }
 
+  /* 100-count view */
+  .count-view .big-count {
+    font-size: 5.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--blue);
+    transition: color 0.3s;
+  }
+  .count-view .count-sub { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+  .count-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    overflow: hidden;
+  }
+  .count-track .fill {
+    height: 100%;
+    width: 0%;
+    background: var(--blue);
+    border-radius: 6px;
+    transition: width 1.9s linear, background 0.3s;
+  }
+
+  button.ctrl.wide {
+    grid-column: 1 / -1;
+    background: var(--panel-2);
+    border: 1px solid var(--blue);
+    color: var(--blue);
+  }
+
   .resume-bar {
     background: var(--panel-2);
     border: 1px solid var(--blue);
@@ -332,6 +363,23 @@
       <button class="ctrl primary" id="startBtn">Start</button>
       <button class="ctrl" id="backBtn">Back</button>
       <button class="ctrl" id="resetBtn">Reset</button>
+      <button class="ctrl wide" id="count100Btn">100 Count</button>
+    </div>
+  </div>
+
+  <!-- 100-count view -->
+  <div id="count100View" class="hidden">
+    <div class="card count-view">
+      <div class="step-word" id="c100Title">100 Count</div>
+      <div class="big-count" id="c100Num">0</div>
+      <div class="count-sub" id="c100Sub">of 100</div>
+      <div class="count-track"><div class="fill" id="c100Fill"></div></div>
+    </div>
+
+    <div class="controls" style="margin-top:18px;">
+      <button class="ctrl primary" id="c100StartBtn">Start</button>
+      <button class="ctrl" id="c100ResetBtn">Reset</button>
+      <button class="ctrl" id="c100BackBtn">Close</button>
     </div>
   </div>
 
@@ -1130,7 +1178,103 @@
     enterPhase();   // handles announce -> 1s gap -> count (when running)
   }
 
+  // ---------- 100 count ----------
+  // A standalone counter: 1 -> COUNT_TARGET, one count per second, spoken aloud.
+  var COUNT_TARGET = 100;
+  var COUNT_INTERVAL_MS = 2000;   // 1 sec + 1 sec = 1 count
+  var c100View = document.getElementById("count100View");
+  var c100Num = document.getElementById("c100Num");
+  var c100Sub = document.getElementById("c100Sub");
+  var c100Fill = document.getElementById("c100Fill");
+  var c100Btn = document.getElementById("count100Btn");
+  var c100StartBtn = document.getElementById("c100StartBtn");
+  var c100ResetBtn = document.getElementById("c100ResetBtn");
+  var c100BackBtn = document.getElementById("c100BackBtn");
+
+  var c100 = 0;
+  var c100Running = false;
+  var c100Timer = null;
+
+  function c100Render() {
+    c100Num.textContent = c100;
+    var frac = c100 / COUNT_TARGET;
+    c100Fill.style.width = (frac * 100) + "%";
+    var color = (c100 >= COUNT_TARGET) ? getCSS("--green")
+              : (frac > 0.7 ? getCSS("--orange") : getCSS("--blue"));
+    c100Num.style.color = color;
+    c100Fill.style.background = color;
+    c100Sub.textContent = (c100 >= COUNT_TARGET) ? "complete" : "of " + COUNT_TARGET;
+    c100StartBtn.textContent = c100Running ? "Pause" : (c100 > 0 ? "Resume" : "Start");
+    c100StartBtn.classList.toggle("running", c100Running);
+  }
+
+  function c100Tick() {
+    if (!c100Running) return;
+    c100++;
+    c100Render();
+    speak("" + c100);
+    if (c100 >= COUNT_TARGET) {
+      c100Stop();
+      melodyAllDone();
+    }
+  }
+
+  function c100Start() {
+    if (c100 >= COUNT_TARGET) c100 = 0;
+    ensureAudio();
+    c100Running = true;
+    requestWakeLock();
+    if (soundOn) music.start();
+    if (c100Timer) clearInterval(c100Timer);
+    c100Timer = setInterval(c100Tick, COUNT_INTERVAL_MS);
+    c100Tick();               // first count fires immediately
+    c100Render();
+  }
+
+  function c100Stop() {
+    c100Running = false;
+    if (c100Timer) { clearInterval(c100Timer); c100Timer = null; }
+    music.stop();
+    releaseWakeLock();
+    c100Render();
+  }
+
+  function c100Toggle() { if (c100Running) { c100Stop(); stopSpeech(); } else c100Start(); }
+
+  function c100Reset() {
+    c100Stop();
+    stopSpeech();
+    c100 = 0;
+    c100Render();
+  }
+
+  function openCount100() {
+    pause();                                  // park the main routine
+    completeView.classList.add("hidden");
+    timerView.classList.add("hidden");
+    resumeBar.classList.add("hidden");
+    phaseBar.classList.add("hidden");
+    c100View.classList.remove("hidden");
+    c100Render();
+  }
+
+  function closeCount100() {
+    c100Stop();
+    stopSpeech();
+    c100View.classList.add("hidden");
+    phaseBar.classList.remove("hidden");
+    if (finished) completeView.classList.remove("hidden");
+    else timerView.classList.remove("hidden");
+  }
+
+  function inCount100() { return !c100View.classList.contains("hidden"); }
+
   // ---------- Events ----------
+  c100Btn.addEventListener("click", openCount100);
+  c100StartBtn.addEventListener("click", c100Toggle);
+  c100ResetBtn.addEventListener("click", c100Reset);
+  c100BackBtn.addEventListener("click", closeCount100);
+
   startBtn.addEventListener("click", toggleStart);
   backBtn.addEventListener("click", back);
   resetBtn.addEventListener("click", reset);
@@ -1144,13 +1288,13 @@
 
   soundToggle.addEventListener("change", function () {
     soundOn = soundToggle.checked;
-    if (soundOn) { ensureAudio(); if (running) music.start(); }
+    if (soundOn) { ensureAudio(); if (running || c100Running) music.start(); }
     else { stopSpeech(); music.stop(); }
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.code === "Space") { e.preventDefault(); toggleStart(); }
-    else if (e.code === "ArrowLeft") { back(); }
+    if (e.code === "Space") { e.preventDefault(); if (inCount100()) c100Toggle(); else toggleStart(); }
+    else if (e.code === "ArrowLeft") { if (!inCount100()) back(); }
   });
 
   resumeBtn.addEventListener("click", function () {
