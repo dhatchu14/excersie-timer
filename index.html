@@ -71,6 +71,7 @@
     user-select: none;
   }
   .sound-toggle input { width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer; }
+  .toggles { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
 
   /* Phase progress: 12 blocks */
   .phase-bar {
@@ -315,10 +316,16 @@
 
   <div class="header">
     <h1>Exercise Timer</h1>
-    <label class="sound-toggle">
-      <input type="checkbox" id="soundToggle" checked>
-      <span>Sound &amp; Voice</span>
-    </label>
+    <div class="toggles">
+      <label class="sound-toggle">
+        <input type="checkbox" id="soundToggle" checked>
+        <span>Voice</span>
+      </label>
+      <label class="sound-toggle">
+        <input type="checkbox" id="musicToggle" checked>
+        <span>Music</span>
+      </label>
+    </div>
   </div>
 
   <!-- Resume prompt (shown on load if a saved session exists) -->
@@ -482,7 +489,10 @@
   var finished = false;
   var tickTimer = null;
   var leadInTimer = null;   // pending "phase name -> 1s gap -> count" timer
-  var soundOn = true;
+  var soundOn = true;   // voice + beeps
+  var musicOn = true;   // background music (its own toggle: on iOS a running
+                        // AudioContext can suppress speech, so it must be
+                        // switchable independently of the voice)
   var startedOnce = false;
   var justAnnounced = false;
 
@@ -506,6 +516,7 @@
   var resetBtn = document.getElementById("resetBtn");
   var restartBtn = document.getElementById("restartBtn");
   var soundToggle = document.getElementById("soundToggle");
+  var musicToggle = document.getElementById("musicToggle");
   var timerView = document.getElementById("timerView");
   var completeView = document.getElementById("completeView");
   var resumeBar = document.getElementById("resumeBar");
@@ -669,10 +680,22 @@
   })();
 
   // ---------- Voice (Web Speech API) ----------
+  // Speech is a separate audio path from the Web Audio tones above, and iOS is
+  // fussy about it in three specific ways: the synth must be primed from a real
+  // touch, it silently drops utterances that name a voice it can't load, and its
+  // queue can get stuck paused. Each is handled below; desktop is unaffected.
+  var IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+               (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var synth = ("speechSynthesis" in window) ? window.speechSynthesis : null;
   var selectedVoice = null;
+  var speechPrimed = false;
+
   function pickVoice() {
-    if (!("speechSynthesis" in window)) return;
-    var voices = window.speechSynthesis.getVoices();
+    if (!synth) return;
+    // None of the names below exist on iOS. Leaving selectedVoice null there means
+    // we never set u.voice, so iOS uses its system default — the only reliable path.
+    if (IS_IOS) return;
+    var voices = synth.getVoices();
     if (!voices || !voices.length) return;
     var prefer = [
       "google uk english female", "google us english", "microsoft zira",
@@ -692,47 +715,68 @@
     }
     if (found) selectedVoice = found;
   }
-  if ("speechSynthesis" in window) {
+  if (synth) {
     pickVoice();
-    window.speechSynthesis.onvoiceschanged = pickVoice;
+    synth.onvoiceschanged = pickVoice;
+  }
+
+  // iOS only lets speech begin from inside a user gesture. A silent utterance on
+  // the first tap unlocks the synth for the timer-driven calls that come later.
+  function primeSpeech() {
+    if (speechPrimed || !synth) return;
+    speechPrimed = true;
+    try {
+      var u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      synth.speak(u);
+    } catch (e) {}
+  }
+
+  // iOS can leave the queue paused (backgrounded tab, interrupted utterance);
+  // nothing further is spoken until it's resumed.
+  function unstickSpeech() {
+    if (!synth) return;
+    try { if (synth.paused) synth.resume(); } catch (e) {}
+  }
+
+  function makeUtterance(text) {
+    var u = new SpeechSynthesisUtterance(text);
+    if (selectedVoice && !IS_IOS) { u.voice = selectedVoice; u.lang = selectedVoice.lang; }
+    u.rate = 1.0;
+    u.pitch = 1.1;
+    u.volume = 1.0;
+    return u;
   }
 
   function speak(text) {
-    if (!soundOn) return;
-    if (!("speechSynthesis" in window)) return;
+    if (!soundOn || !synth) return;
     try {
-      var u = new SpeechSynthesisUtterance(text);
-      if (selectedVoice) { u.voice = selectedVoice; u.lang = selectedVoice.lang; }
-      u.rate = 1.0;
-      u.pitch = 1.1;
-      u.volume = 1.0;
+      unstickSpeech();
+      var u = makeUtterance(text);
       u.onstart = function () { music.duck(true); };
       u.onend   = function () { music.duck(false); };
       u.onerror = function () { music.duck(false); };
-      window.speechSynthesis.speak(u);
+      synth.speak(u);
     } catch (e) {}
   }
   function stopSpeech() {
-    if ("speechSynthesis" in window) {
-      try { window.speechSynthesis.cancel(); } catch (e) {}
-    }
+    if (synth) { try { synth.cancel(); } catch (e) {} }
     music.duck(false);
   }
 
   // Speak text and call cb() once it finishes (so we can time a gap after it).
   // Falls back to a timer if speech is off or onend never fires.
   function speakThen(text, cb) {
-    if (!soundOn || !("speechSynthesis" in window)) { if (cb) cb(); return; }
+    if (!soundOn || !synth) { if (cb) cb(); return; }
     try {
-      var u = new SpeechSynthesisUtterance(text);
-      if (selectedVoice) { u.voice = selectedVoice; u.lang = selectedVoice.lang; }
-      u.rate = 1.0; u.pitch = 1.1; u.volume = 1.0;
+      unstickSpeech();
+      var u = makeUtterance(text);
       var done = false;
       function fin() { if (done) return; done = true; music.duck(false); if (cb) cb(); }
       u.onstart = function () { music.duck(true); };
       u.onend = fin;
       u.onerror = fin;
-      window.speechSynthesis.speak(u);
+      synth.speak(u);
       setTimeout(fin, 2500); // safety net in case onend doesn't fire
     } catch (e) { if (cb) cb(); }
   }
@@ -1044,7 +1088,7 @@
     running = true;
     updateStartBtn();
     requestWakeLock();
-    if (soundOn) music.start();
+    if (musicOn) music.start();
     clearLeadIn();
 
     var atPhaseStart = !resting &&
@@ -1224,7 +1268,7 @@
     ensureAudio();
     c100Running = true;
     requestWakeLock();
-    if (soundOn) music.start();
+    if (musicOn) music.start();
     if (c100Timer) clearInterval(c100Timer);
     c100Timer = setInterval(c100Tick, COUNT_INTERVAL_MS);
     c100Tick();               // first count fires immediately
@@ -1288,9 +1332,19 @@
 
   soundToggle.addEventListener("change", function () {
     soundOn = soundToggle.checked;
-    if (soundOn) { ensureAudio(); if (running || c100Running) music.start(); }
-    else { stopSpeech(); music.stop(); }
+    if (soundOn) { ensureAudio(); primeSpeech(); }
+    else stopSpeech();
   });
+
+  musicToggle.addEventListener("change", function () {
+    musicOn = musicToggle.checked;
+    if (musicOn) { ensureAudio(); if (running || c100Running) music.start(); }
+    else music.stop();
+  });
+
+  // Prime the synth on the very first tap, whatever the user taps.
+  document.addEventListener("touchend", primeSpeech, true);
+  document.addEventListener("click", primeSpeech, true);
 
   document.addEventListener("keydown", function (e) {
     if (e.code === "Space") { e.preventDefault(); if (inCount100()) c100Toggle(); else toggleStart(); }
@@ -1310,6 +1364,7 @@
 
   // ---------- Init ----------
   soundOn = soundToggle.checked;
+  musicOn = musicToggle.checked;
   secondsLeft = unitTotal();
   renderAll();
 
